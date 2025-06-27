@@ -4,7 +4,7 @@ Este projeto implementa um sistema completo de trajetórias para objetos 3D em O
 
 
 ##Video
-
+https://github.com/user-attachments/assets/eb5cdeb0-c297-4057-b829-e38b2cbeb1b9
 
 ## Funcionalidades
 
