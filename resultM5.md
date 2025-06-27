@@ -1,4 +1,4 @@
-# Projeto OpenGL - Iluminação em Objeto com interações
+# Projeto OpenGL - Camera em primeira pessoa em Objeto com interações
 
 ## Descrição
 
@@ -32,6 +32,10 @@ Este projeto é uma aplicação simples em OpenGL que renderiza um objeto com il
 
 
 ## Video
+
+
+https://github.com/user-attachments/assets/1caa13dc-e264-4adc-8699-47c99755cb7d
+
 
 
 Desenvolvido por Eduardo Colissi.
