@@ -48,6 +48,7 @@ set(EXERCISES
     TriangleTex
     SpherePhong
     M2
+    M3
 )
 
 add_compile_options(-Wno-pragmas)
