@@ -29,6 +29,7 @@ Este projeto é uma aplicação simples em OpenGL que renderiza um objeto com te
 
 
 ## Imagens
+![ResultM3](https://github.com/user-attachments/assets/16fd362a-4aaf-4b21-b904-dd0d465348f5)
 
 
 
