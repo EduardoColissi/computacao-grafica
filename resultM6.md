@@ -3,8 +3,12 @@
 Este projeto implementa um sistema completo de trajetórias para objetos 3D em OpenGL, permitindo criar, editar, salvar e carregar trajetórias cíclicas.
 
 
+https://github.com/user-attachments/assets/d123dbec-5910-474b-a310-5bf08111e946
+
+
+
 ##Video
-https://github.com/user-attachments/assets/eb5cdeb0-c297-4057-b829-e38b2cbeb1b9
+
 
 ## Funcionalidades
 
