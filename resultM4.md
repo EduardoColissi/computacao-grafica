@@ -30,6 +30,7 @@ Este projeto é uma aplicação simples em OpenGL que renderiza um objeto com il
 
 
 ## Imagens
+![image](https://github.com/user-attachments/assets/951f3bf8-a35f-4a3f-8317-6090f40247d6)
 
 
 Desenvolvido por Eduardo Colissi.
