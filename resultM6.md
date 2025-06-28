@@ -1,9 +1,14 @@
 # Sistema de Trajetórias - M6.cpp
 
 Este projeto implementa um sistema completo de trajetórias para objetos 3D em OpenGL, permitindo criar, editar, salvar e carregar trajetórias cíclicas.
+## Video
 
 
-##Video
+https://github.com/user-attachments/assets/d123dbec-5910-474b-a310-5bf08111e946
+
+
+
+
 
 
 ## Funcionalidades
