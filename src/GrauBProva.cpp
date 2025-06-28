@@ -297,6 +297,46 @@ struct SceneObject
 		: position(0.0f), rotation(0.0f), scale(1.0f), name(objName) {}
 };
 
+// Estrutura para configuração de objeto da cena
+struct ObjectConfig
+{
+    string name;
+    string objFilePath;
+    glm::vec3 position;
+    glm::vec3 rotation;
+    glm::vec3 scale;
+    string texturePath;
+    bool hasTrajectory;
+    vector<glm::vec3> trajectoryPoints;
+    vector<float> trajectoryTimes;
+};
+
+// Estrutura para configuração de luz
+struct LightConfig
+{
+    glm::vec3 position;
+    glm::vec3 color;
+    float intensity;
+};
+
+// Estrutura para configuração de câmera
+struct CameraConfig
+{
+    glm::vec3 position;
+    glm::vec3 target;
+    float fov;
+    float nearPlane;
+    float farPlane;
+};
+
+// Estrutura para configuração completa da cena
+struct SceneConfig
+{
+    vector<ObjectConfig> objects;
+    vector<LightConfig> lights;
+    CameraConfig camera;
+};
+
 // Funções para carregamento de objeto OBJ
 Geometry setupGeometryFromFile(const char* filepath);
 bool loadObject(
@@ -313,6 +353,67 @@ void renderTrajectoryPoints(const Trajectory& trajectory, GLuint shaderID,
 
 // Função para criar geometria de pontos de controle
 GLuint createControlPointGeometry();
+
+// Função para criar geometria de 3 quadrados conectados (canto de parede)
+Geometry createThreeWallCornerGeometry(const std::string& texturePath) {
+    float size = 1.0f;
+    std::vector<GLfloat> vertices = {
+        // Face 1: XY (Z=0)
+        0, 0, 0,   1,1,1,   0,0,   0,0,1,
+        size, 0, 0,   1,1,1,   1,0,   0,0,1,
+        size, size, 0,   1,1,1,   1,1,   0,0,1,
+        0, 0, 0,   1,1,1,   0,0,   0,0,1,
+        size, size, 0,   1,1,1,   1,1,   0,0,1,
+        0, size, 0,   1,1,1,   0,1,   0,0,1,
+
+        // Face 2: YZ (X=0)
+        0, 0, 0,   1,1,1,   0,0,   1,0,0,
+        0, size, 0,   1,1,1,   1,0,   1,0,0,
+        0, size, size,   1,1,1,   1,1,   1,0,0,
+        0, 0, 0,   1,1,1,   0,0,   1,0,0,
+        0, size, size,   1,1,1,   1,1,   1,0,0,
+        0, 0, size,   1,1,1,   0,1,   1,0,0,
+
+        // Face 3: XZ (Y=0)
+        0, 0, 0,   1,1,1,   0,0,   0,1,0,
+        0, 0, size,   1,1,1,   1,0,   0,1,0,
+        size, 0, size,   1,1,1,   1,1,   0,1,0,
+        0, 0, 0,   1,1,1,   0,0,   0,1,0,
+        size, 0, size,   1,1,1,   1,1,   0,1,0,
+        size, 0, 0,   1,1,1,   0,1,   0,1,0,
+    };
+
+    GLuint VBO, VAO;
+    glGenBuffers(1, &VBO);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(GLfloat), vertices.data(), GL_STATIC_DRAW);
+
+    glGenVertexArrays(1, &VAO);
+    glBindVertexArray(VAO);
+
+    // pos
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid*)0);
+    glEnableVertexAttribArray(0);
+    // color
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid*)(3 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(1);
+    // tex_coord
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid*)(6 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(2);
+    // normal
+    glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 11 * sizeof(GLfloat), (GLvoid*)(8 * sizeof(GLfloat)));
+    glEnableVertexAttribArray(3);
+
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    glBindVertexArray(0);
+
+    Geometry geom;
+    geom.VAO = VAO;
+    geom.vertexCount = 6 * 3; // 3 faces, 2 triangles each
+    geom.textureID = loadTexture("assets/tex/pixelWall.png");
+    geom.textureFilePath = "assets/tex/pixelWall.png";
+    return geom;
+}
 
 // Dimensões da janela (pode ser alterado em tempo de execução)
 const GLuint WIDTH = 1000, HEIGHT = 1000;
@@ -397,10 +498,127 @@ int selectedObjectIndex = 0;
 bool trajectoryMode = false;
 bool showTrajectoryPoints = false;
 
+// Variáveis para rotações individuais dos objetos
+bool suzanneRotateX = false, suzanneRotateY = false, suzanneRotateZ = false;
+bool cubeRotateX = false, cubeRotateY = false, cubeRotateZ = false;
+
+// Posições iniciais dos objetos para reset
+glm::vec3 suzanneInitialPosition = glm::vec3(2.5f, 0.5f, 0.5f);
+glm::vec3 cubeInitialPosition = glm::vec3(2.0f, 0.0f, 0.0f);
+
+// Configuração global da cena
+SceneConfig sceneConfig;
+
+// Função para carregar configuração de cena de arquivo
+SceneConfig loadSceneConfig(const string& filename)
+{
+    SceneConfig config;
+    ifstream file(filename);
+    
+    if (!file.is_open()) {
+        cout << "Erro ao abrir arquivo de configuração: " << filename << endl;
+        return config;
+    }
+    
+    string line;
+    string currentSection = "";
+    
+    while (getline(file, line)) {
+        // Remove espaços em branco no início e fim
+        line.erase(0, line.find_first_not_of(" \t"));
+        line.erase(line.find_last_not_of(" \t") + 1);
+        
+        // Pula linhas vazias e comentários
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        
+        // Verifica se é uma seção
+        if (line[0] == '[' && line[line.length()-1] == ']') {
+            currentSection = line.substr(1, line.length()-2);
+            continue;
+        }
+        
+        istringstream iss(line);
+        string keyword;
+        iss >> keyword;
+        
+        if (currentSection == "OBJECTS") {
+            if (keyword == "OBJECT") {
+                ObjectConfig obj;
+                iss >> obj.name >> obj.objFilePath;
+                
+                // Lê transformações
+                float px, py, pz, rx, ry, rz, sx, sy, sz;
+                iss >> px >> py >> pz >> rx >> ry >> rz >> sx >> sy >> sz;
+                obj.position = glm::vec3(px, py, pz);
+                obj.rotation = glm::vec3(rx, ry, rz);
+                obj.scale = glm::vec3(sx, sy, sz);
+                
+                // Lê textura (opcional)
+                iss >> obj.texturePath;
+                
+                // Lê trajetória (opcional)
+                iss >> obj.hasTrajectory;
+                if (obj.hasTrajectory) {
+                    int numPoints;
+                    iss >> numPoints;
+                    for (int i = 0; i < numPoints; ++i) {
+                        float x, y, z, time;
+                        iss >> x >> y >> z >> time;
+                        obj.trajectoryPoints.push_back(glm::vec3(x, y, z));
+                        obj.trajectoryTimes.push_back(time);
+                    }
+                }
+                
+                config.objects.push_back(obj);
+            }
+        }
+        else if (currentSection == "LIGHTS") {
+            if (keyword == "LIGHT") {
+                LightConfig light;
+                float px, py, pz, cx, cy, cz, intensity;
+                iss >> px >> py >> pz >> cx >> cy >> cz >> intensity;
+                light.position = glm::vec3(px, py, pz);
+                light.color = glm::vec3(cx, cy, cz);
+                light.intensity = intensity;
+                config.lights.push_back(light);
+            }
+        }
+        else if (currentSection == "CAMERA") {
+            if (keyword == "POSITION") {
+                float px, py, pz;
+                iss >> px >> py >> pz;
+                config.camera.position = glm::vec3(px, py, pz);
+            }
+            else if (keyword == "TARGET") {
+                float tx, ty, tz;
+                iss >> tx >> ty >> tz;
+                config.camera.target = glm::vec3(tx, ty, tz);
+            }
+            else if (keyword == "FRUSTUM") {
+                iss >> config.camera.fov >> config.camera.nearPlane >> config.camera.farPlane;
+            }
+        }
+    }
+    
+    file.close();
+    cout << "Configuração de cena carregada de: " << filename << endl;
+    cout << "Objetos: " << config.objects.size() << endl;
+    cout << "Luzes: " << config.lights.size() << endl;
+    
+    return config;
+}
+
 // Função para mostrar instruções de uso
 void showInstructions()
 {
     cout << "=== SISTEMA DE TRAJETÓRIAS ===" << endl;
+    cout << "F - Selecionar Suzanne para rotação" << endl;
+    cout << "G - Selecionar cubo (WallCorner) para rotação" << endl;
+    cout << "X/Y/Z - Rotação do objeto selecionado (após F ou G)" << endl;
+    cout << "R - Reset: para todas as animações e volta objetos para posição inicial" << endl;
+    cout << "H - Recarregar configuração de cena do arquivo scene_config.txt" << endl;
     cout << "T - Ativar/Desativar modo trajetória" << endl;
     cout << "P - Adicionar ponto de controle (no modo trajetória)" << endl;
     cout << "Clique Esquerdo - Adicionar ponto de controle (no modo trajetória)" << endl;
@@ -414,7 +632,6 @@ void showInstructions()
     cout << "1 - Criar trajetória circular" << endl;
     cout << "2 - Criar trajetória quadrada" << endl;
     cout << "3 - Criar trajetória triangular" << endl;
-    cout << "X/Y/Z - Rotação do objeto" << endl;
     cout << "WASD - Movimento da câmera" << endl;
     cout << "Mouse - Olhar ao redor" << endl;
     cout << "ESC - Sair" << endl;
@@ -465,14 +682,42 @@ int main()
     // Compilação dos shaders e geometria
     GLuint shaderID = setupShader();
     
-    // Carregamento do objeto Suzanne
-    Geometry suzanneGeometry = setupGeometryFromFile("C:/Users/educo/Desktop/computacao-grafica-mod-1/assets/Modelos3D/SuzanneSubdiv1.obj");
-
-    // Criar objetos da cena
-    SceneObject suzanne("Suzanne");
-    suzanne.geometry = suzanneGeometry;
-    suzanne.position = glm::vec3(0.0f, 0.0f, 0.0f);
-    sceneObjects.push_back(suzanne);
+    // Carregar configuração de cena de arquivo
+    sceneConfig = loadSceneConfig("scene_config.txt");
+    
+    // Criar objetos da cena baseado na configuração
+    for (const auto& objConfig : sceneConfig.objects) {
+        SceneObject obj(objConfig.name);
+        
+        // Carregar geometria do arquivo OBJ
+        if (objConfig.objFilePath.find(".obj") != string::npos) {
+            obj.geometry = setupGeometryFromFile(objConfig.objFilePath.c_str());
+        } else {
+            // Se não for OBJ, criar geometria padrão (cubo)
+            obj.geometry = createThreeWallCornerGeometry(objConfig.texturePath);
+        }
+        
+        // Aplicar transformações iniciais
+        obj.position = objConfig.position;
+        obj.rotation = objConfig.rotation;
+        obj.scale = objConfig.scale;
+        
+        // Configurar trajetória se especificada
+        if (objConfig.hasTrajectory) {
+            for (size_t i = 0; i < objConfig.trajectoryPoints.size(); ++i) {
+                float time = (i < objConfig.trajectoryTimes.size()) ? objConfig.trajectoryTimes[i] : 2.0f;
+                obj.trajectory.addControlPoint(objConfig.trajectoryPoints[i], time);
+            }
+        }
+        
+        sceneObjects.push_back(obj);
+        cout << "Objeto criado: " << objConfig.name << endl;
+    }
+    
+    // Configurar câmera baseado na configuração
+    if (sceneConfig.camera.position != glm::vec3(0.0f)) {
+        camera = FirstPersonCamera(sceneConfig.camera.position);
+    }
 
     glUseProgram(shaderID);
 
@@ -482,6 +727,9 @@ int main()
     GLint projLoc = glGetUniformLocation(shaderID, "projection");
 
     glEnable(GL_DEPTH_TEST);
+    // Habilitar blending para transparência
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     // Loop da aplicação - "game loop"
     while (!glfwWindowShouldClose(window))
@@ -536,10 +784,20 @@ int main()
         glUniform3f(glGetUniformLocation(shaderID, "ks"), specularColor.r, specularColor.g, specularColor.b);
         glUniform1f(glGetUniformLocation(shaderID, "q"), shininess);
 
-        // Luz posicionada na frente do personagem (Suzanne)
-        glUniform3f(glGetUniformLocation(shaderID, "lightPos"), 0.0f, 0.0f, 5.0f);
-        // Iluminação mais suave
-        glUniform3f(glGetUniformLocation(shaderID, "lightColor"), 0.8f, 0.8f, 0.8f);
+        // Usar luzes da configuração de cena (ou luz padrão se não houver configuração)
+        if (!sceneConfig.lights.empty()) {
+            const auto& light = sceneConfig.lights[0]; // Usar primeira luz por enquanto
+            glUniform3f(glGetUniformLocation(shaderID, "lightPos"), light.position.x, light.position.y, light.position.z);
+            glUniform3f(glGetUniformLocation(shaderID, "lightColor"), 
+                       light.color.x * light.intensity, 
+                       light.color.y * light.intensity, 
+                       light.color.z * light.intensity);
+        } else {
+            // Luz padrão se não houver configuração
+            glUniform3f(glGetUniformLocation(shaderID, "lightPos"), 3.0f, 1.0f, 2.0f);
+            glUniform3f(glGetUniformLocation(shaderID, "lightColor"), 0.8f, 0.8f, 0.8f);
+        }
+        
         glUniform3f(glGetUniformLocation(shaderID, "cameraPos"), camera.position.x, camera.position.y, camera.position.z);
         
         // Renderização dos objetos da cena
@@ -548,7 +806,11 @@ int main()
             auto& obj = sceneObjects[i];
             
             glActiveTexture(GL_TEXTURE0);
-            if (obj.geometry.textureID > 0) glBindTexture(GL_TEXTURE_2D, obj.geometry.textureID);
+            if (obj.geometry.textureID > 0) {
+                glBindTexture(GL_TEXTURE_2D, obj.geometry.textureID);
+            } else {
+                glBindTexture(GL_TEXTURE_2D, 0);
+            }
             glUniform1i(glGetUniformLocation(shaderID, "tex_buffer"), 0);
             
             glm::mat4 model = glm::mat4(1.0f);
@@ -556,14 +818,30 @@ int main()
             
             // Rotação inicial para posicionar o objeto virado para a frente (câmera)
             model = glm::rotate(model, glm::radians(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+            model = glm::scale(model, obj.scale);
             
-            if (rotateX)
-                model = glm::rotate(model, angle, glm::vec3(1.0f, 0.0f, 0.0f));
-            else if (rotateY)
-                model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
-            else if (rotateZ)
-                model = glm::rotate(model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+            // Rotação específica para o Suzanne (girar para a direita)
+            if (obj.name == "Suzanne") {
+                model = glm::rotate(model, glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                 
+                // Aplicar rotações individuais do Suzanne
+                if (suzanneRotateX)
+                    model = glm::rotate(model, angle, glm::vec3(1.0f, 0.0f, 0.0f));
+                else if (suzanneRotateY)
+                    model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+                else if (suzanneRotateZ)
+                    model = glm::rotate(model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+            }
+            else if (obj.name == "WallCorner") {
+                // Aplicar rotações individuais do cubo
+                if (cubeRotateX)
+                    model = glm::rotate(model, angle, glm::vec3(1.0f, 0.0f, 0.0f));
+                else if (cubeRotateY)
+                    model = glm::rotate(model, angle, glm::vec3(0.0f, 1.0f, 0.0f));
+                else if (cubeRotateZ)
+                    model = glm::rotate(model, angle, glm::vec3(0.0f, 0.0f, 1.0f));
+            }
+            
             glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
             glBindVertexArray(obj.geometry.VAO);
             glDrawArrays(GL_TRIANGLES, 0, obj.geometry.vertexCount);
@@ -616,6 +894,144 @@ void key_callback(GLFWwindow* window, int key, int scancode, int action, int mod
 			rotateX = false;
 			rotateY = false;
 			rotateZ = true;
+		}
+		
+		// Seleção de objetos para rotação individual
+		if (key == GLFW_KEY_F && action == GLFW_PRESS)
+		{
+			selectedObjectIndex = 0; // Suzanne
+			cout << "Objeto selecionado para rotação: Suzanne" << endl;
+		}
+		
+		if (key == GLFW_KEY_G && action == GLFW_PRESS)
+		{
+			selectedObjectIndex = 1; // WallCorner (cubo)
+			cout << "Objeto selecionado para rotação: WallCorner (cubo)" << endl;
+		}
+		
+		// Controles de rotação individual
+		if (key == GLFW_KEY_X && action == GLFW_PRESS)
+		{
+			if (selectedObjectIndex == 0) { // Suzanne
+				suzanneRotateX = true;
+				suzanneRotateY = false;
+				suzanneRotateZ = false;
+				cubeRotateX = false;
+				cubeRotateY = false;
+				cubeRotateZ = false;
+			} else { // WallCorner
+				cubeRotateX = true;
+				cubeRotateY = false;
+				cubeRotateZ = false;
+				suzanneRotateX = false;
+				suzanneRotateY = false;
+				suzanneRotateZ = false;
+			}
+		}
+
+		if (key == GLFW_KEY_Y && action == GLFW_PRESS)
+		{
+			if (selectedObjectIndex == 0) { // Suzanne
+				suzanneRotateX = false;
+				suzanneRotateY = true;
+				suzanneRotateZ = false;
+				cubeRotateX = false;
+				cubeRotateY = false;
+				cubeRotateZ = false;
+			} else { // WallCorner
+				cubeRotateX = false;
+				cubeRotateY = true;
+				cubeRotateZ = false;
+				suzanneRotateX = false;
+				suzanneRotateY = false;
+				suzanneRotateZ = false;
+			}
+		}
+
+		if (key == GLFW_KEY_Z && action == GLFW_PRESS)
+		{
+			if (selectedObjectIndex == 0) { // Suzanne
+				suzanneRotateX = false;
+				suzanneRotateY = false;
+				suzanneRotateZ = true;
+				cubeRotateX = false;
+				cubeRotateY = false;
+				cubeRotateZ = false;
+			} else { // WallCorner
+				cubeRotateX = false;
+				cubeRotateY = false;
+				cubeRotateZ = true;
+				suzanneRotateX = false;
+				suzanneRotateY = false;
+				suzanneRotateZ = false;
+			}
+		}
+		
+		// Reset - para todas as animações e volta objetos para posição inicial
+		if (key == GLFW_KEY_R && action == GLFW_PRESS)
+		{
+			// Parar todas as rotações
+			suzanneRotateX = false;
+			suzanneRotateY = false;
+			suzanneRotateZ = false;
+			cubeRotateX = false;
+			cubeRotateY = false;
+			cubeRotateZ = false;
+			
+			// Resetar posições dos objetos
+			if (sceneObjects.size() >= 1) {
+				sceneObjects[0].position = suzanneInitialPosition; // Suzanne
+			}
+			if (sceneObjects.size() >= 2) {
+				sceneObjects[1].position = cubeInitialPosition; // WallCorner
+			}
+			
+			// Parar todas as trajetórias
+			for (auto& obj : sceneObjects) {
+				obj.trajectory.stop();
+				obj.trajectory.clearControlPoints();
+			}
+			
+			cout << "Reset completo: todas as animações paradas e objetos na posição inicial" << endl;
+		}
+		
+		// Recarregar configuração de cena
+		if (key == GLFW_KEY_H && action == GLFW_PRESS)
+		{
+			// Limpar objetos atuais
+			sceneObjects.clear();
+			
+			// Recarregar configuração
+			SceneConfig newConfig = loadSceneConfig("scene_config.txt");
+			
+			// Recriar objetos
+			for (const auto& objConfig : newConfig.objects) {
+				SceneObject obj(objConfig.name);
+				
+				if (objConfig.objFilePath.find(".obj") != string::npos) {
+					obj.geometry = setupGeometryFromFile(objConfig.objFilePath.c_str());
+				} else {
+					obj.geometry = createThreeWallCornerGeometry(objConfig.texturePath);
+				}
+				
+				obj.position = objConfig.position;
+				obj.rotation = objConfig.rotation;
+				obj.scale = objConfig.scale;
+				
+				if (objConfig.hasTrajectory) {
+					for (size_t i = 0; i < objConfig.trajectoryPoints.size(); ++i) {
+						float time = (i < objConfig.trajectoryTimes.size()) ? objConfig.trajectoryTimes[i] : 2.0f;
+						obj.trajectory.addControlPoint(objConfig.trajectoryPoints[i], time);
+					}
+				}
+				
+				sceneObjects.push_back(obj);
+			}
+			
+			// Atualizar configuração global
+			sceneConfig = newConfig;
+			
+			cout << "Configuração de cena recarregada!" << endl;
 		}
 		
 		// Controles de trajetória

@@ -128,7 +128,7 @@ int main()
     GLuint shaderID = setupShader();
     
     // Carregamento do objeto Suzanne
-    Geometry suzanneGeometry = setupGeometryFromFile("C:/Users/educo/Desktop/CG-CC-01-25/assets/Modelos3D/SuzanneSubdiv1.obj");
+    Geometry suzanneGeometry = setupGeometryFromFile("C:/Users/educo/Desktop/computacao-grafica-mod-1/assets/Modelos3D/SuzanneSubdiv1.obj");
 
     glUseProgram(shaderID);
 
